@@ -67,11 +67,18 @@
   .spacer { flex: 1; }
   .hint { color: var(--muted); font-size: 12px; }
   .fields { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #inputFields { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  #inputFields[hidden] { display: none; }
+  #inputFields > div { flex: 1; min-width: 180px; max-width: 320px; }
+  #inputFields input.empty { border-color: #e0a100; }
   .fields button { padding: 3px 9px; font-size: 12px; font-family: Consolas, monospace; }
   .placeholder-msg { color: var(--muted); margin: auto; text-align: center; }
   .version { color: var(--muted); font-size: 12px; margin-right: 4px; }
+  /* righe fisse: la barra aggiornamenti nascosta non deve spostare lista ed editor */
+  header { grid-row: 1; }
+  aside, main { grid-row: 3; }
   #updateBar {
-    grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    grid-row: 2; grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     padding: 8px 16px; background: var(--sel); border-bottom: 1px solid var(--border);
   }
   #updateBar[hidden] { display: none; }
@@ -121,8 +128,9 @@
     <!-- COMPONI: messaggio pronto da copiare, modificabile senza toccare il template -->
     <section class="pane active" id="pane-compose">
       <div class="hint">Puoi ritoccare il testo qui sotto prima di copiarlo: le modifiche non alterano il template salvato.
-        <span id="liveHint" hidden>· Data e ora si aggiornano automaticamente finché non modifichi il testo.</span>
-        <span id="frozenHint" hidden>· Testo modificato: data e ora non si aggiornano più (premi Ripristina per riattivarle).</span></div>
+        <span id="liveHint" hidden>· I campi si aggiornano nel testo finché non lo modifichi a mano.</span>
+        <span id="frozenHint" hidden>· Testo modificato a mano: campi, data e ora non si aggiornano più (premi Ripristina per riattivarli).</span></div>
+      <div id="inputFields" hidden></div>
       <textarea id="composeText" spellcheck="true"></textarea>
       <div class="actions">
         <button class="primary big" id="btnCopy">Copia</button>
@@ -147,6 +155,9 @@
           <button type="button" data-insert="{{data}}" title="Data di oggi, es. 19/11/2026">{{data}}</button>
           <button type="button" data-insert="{{ora}}" title="Ora attuale, es. 14:35">{{ora}}</button>
           <button type="button" data-insert="{{dataora}}" title="Data e ora, es. 19/11/2026 14:35">{{dataora}}</button>
+          <span class="hint" style="margin-left:8px">da compilare:</span>
+          <button type="button" data-insert="{{cliente}}" title="Nome del cliente, da compilare in Componi">{{cliente}}</button>
+          <button type="button" data-insert="{{ticket}}" title="Numero del ticket, da compilare in Componi">{{ticket}}</button>
         </div>
       </div>
       <div class="actions">
@@ -170,7 +181,7 @@
 
   const SAMPLE = [
     { title: 'Presa in carico', category: 'Assistenza',
-      body: 'Gentile Cliente,\n\nla ringraziamo per averci contattato. La sua richiesta è stata presa in carico in data {{data}} alle ore {{ora}} e verrà gestita il prima possibile.\n\nCordiali saluti' },
+      body: 'Gentile {{cliente}},\n\nla ringraziamo per averci contattato. La sua richiesta (ticket n. {{ticket}}) è stata presa in carico in data {{data}} alle ore {{ora}} e verrà gestita il prima possibile.\n\nCordiali saluti' },
     { title: 'Richiesta informazioni aggiuntive', category: 'Assistenza',
       body: 'Gentile Cliente,\n\nper poter procedere con la sua richiesta avremmo bisogno di alcune informazioni aggiuntive:\n- \n- \n\nRestiamo in attesa di un suo riscontro.\n\nCordiali saluti' },
     { title: 'Chiusura ticket', category: 'Chiusura',
@@ -260,8 +271,15 @@
 
   const current = () => templates.find(t => t.id === currentId);
 
-  // ---------- Campi automatici ----------
-  // Segnaposto {{nome}} sostituiti nel messaggio composto. Per aggiungere un campo basta una voce qui.
+  // ---------- Campi ----------
+  // Segnaposto {{nome}} sostituiti nel messaggio composto. Per aggiungere un campo basta una voce
+  // in FIELDS (calcolato in automatico) o in INPUT_FIELDS (compilato a mano in "Componi").
+  const INPUT_FIELDS = {
+    cliente: { label: 'Nome cliente', placeholder: 'es. Mario Rossi' },
+    ticket:  { label: 'Numero ticket', placeholder: 'es. 123456' },
+  };
+  // valori compilati: restano anche cambiando template, finché non si preme "Pulisci campi"
+  const fieldValues = {};
   const pad = n => String(n).padStart(2, '0');
   const FIELDS = {
     data:    d => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`,
@@ -269,11 +287,45 @@
     dataora: d => `${FIELDS.data(d)} ${FIELDS.ora(d)}`,
   };
   const FIELD_RE = /\{\{\s*([a-zA-Z_]+)\s*\}\}/g;
-  const hasLiveFields = body => [...body.matchAll(FIELD_RE)].some(m => FIELDS[m[1].toLowerCase()]);
+  const usedFields = body => [...new Set([...body.matchAll(FIELD_RE)].map(m => m[1].toLowerCase()))];
+  const hasLiveFields = body => usedFields(body).some(n => FIELDS[n] || INPUT_FIELDS[n]);
   const renderBody = body => {
     const now = new Date();
-    return body.replace(FIELD_RE, (all, name) => { const f = FIELDS[name.toLowerCase()]; return f ? f(now) : all; });
+    return body.replace(FIELD_RE, (all, name) => {
+      const n = name.toLowerCase();
+      if (FIELDS[n]) return FIELDS[n](now);
+      if (INPUT_FIELDS[n]) return (fieldValues[n] || '').trim() || all;   // vuoto: resta il segnaposto
+      return all;
+    });
   };
+  // campi da compilare ancora presenti come segnaposto nel testo
+  const unfilledFields = text => usedFields(text).filter(n => INPUT_FIELDS[n]);
+
+  function renderInputFields() {
+    const t = current(), box = $('inputFields');
+    const names = t ? usedFields(t.body).filter(n => INPUT_FIELDS[n]) : [];
+    // ordine stabile, come in INPUT_FIELDS
+    const ordered = Object.keys(INPUT_FIELDS).filter(n => names.includes(n));
+    box.hidden = !ordered.length;
+    box.innerHTML = '';
+    ordered.forEach(n => {
+      const wrap = document.createElement('div');
+      const id = 'field-' + n;
+      wrap.innerHTML = `<label for="${id}">${INPUT_FIELDS[n].label}</label>`;
+      const inp = document.createElement('input');
+      inp.id = id; inp.placeholder = INPUT_FIELDS[n].placeholder; inp.value = fieldValues[n] || '';
+      inp.classList.toggle('empty', !inp.value.trim());
+      inp.oninput = () => { fieldValues[n] = inp.value; inp.classList.toggle('empty', !inp.value.trim()); refreshCompose(); };
+      wrap.appendChild(inp);
+      box.appendChild(wrap);
+    });
+    if (ordered.length) {
+      const clr = document.createElement('button');
+      clr.type = 'button'; clr.textContent = 'Pulisci campi'; clr.title = 'Svuota i campi per un nuovo ticket';
+      clr.onclick = () => { Object.keys(fieldValues).forEach(k => delete fieldValues[k]); renderInputFields(); refreshCompose(); box.querySelector('input').focus(); };
+      box.appendChild(clr);
+    }
+  }
 
   // Il messaggio composto resta "vivo" (si aggiorna da solo) finché l'utente non lo modifica.
   let composeLive = true;
@@ -302,6 +354,7 @@
     $('workArea').hidden = !t;
     $('workArea').style.display = t ? 'flex' : 'none';
     if (t) {
+      renderInputFields();
       refreshCompose(true);
       $('editTitle').value = t.title;
       $('editCat').value = t.category || '';
@@ -329,6 +382,12 @@
   async function copyText() {
     refreshCompose();            // data e ora aggiornate al momento della copia
     const text = $('composeText').value;
+    const missing = unfilledFields(text);
+    if (missing.length && !confirm('Campi non compilati: ' + missing.map(n => INPUT_FIELDS[n].label).join(', ') +
+        '.\nNel messaggio resterebbe il segnaposto (es. {{' + missing[0] + '}}).\n\nCopiare comunque?')) {
+      const inp = $('field-' + missing[0]); if (inp) inp.focus();
+      return;
+    }
     try {
       await navigator.clipboard.writeText(text);
     } catch {
@@ -348,6 +407,7 @@
     t.body = $('editBody').value;
     t.updatedAt = Date.now();
     persist();
+    renderInputFields();
     refreshCompose(true);
     renderList();
     toast('Template salvato');

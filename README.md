@@ -17,6 +17,9 @@ All'avvio l'app controlla se c'è una versione nuova e propone di aggiornarsi co
 - **Campi automatici**: nel testo del template puoi usare `{{data}}` (19/11/2026), `{{ora}}` (14:35) e
   `{{dataora}}` (19/11/2026 14:35), anche con i pulsanti sotto il testo. In "Componi" vengono sostituiti con
   data e ora attuali, aggiornate finché non modifichi il testo e ricalcolate al momento della copia.
+- **Campi da compilare**: `{{cliente}}` (nome cliente) e `{{ticket}}` (numero ticket). In "Componi" compaiono
+  le caselle solo per i campi usati dal template; i valori restano cambiando template (utile per più messaggi
+  sullo stesso ticket) finché non premi **Pulisci campi**. Se copi con un campo vuoto l'app chiede conferma.
 - **Esporta / Importa**: backup e condivisione dei template in un file JSON.
 
 Non mettere la cartella in `C:\Programmi`: lì l'app non ha i permessi per scrivere `template.json`.
