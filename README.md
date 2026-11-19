@@ -9,6 +9,9 @@ precedente in `template.bak.json`. Per spostare l'app su un altro PC basta copia
 
 - **Componi**: seleziona un template, ritocca il testo se serve, premi **Copia** (o Ctrl+Invio).
 - **Modifica template**: titolo, categoria e testo; **Salva** (o Ctrl+S), **Duplica**, **Elimina**.
+- **Campi automatici**: nel testo del template puoi usare `{{data}}` (19/11/2026), `{{ora}}` (14:35) e
+  `{{dataora}}` (19/11/2026 14:35), anche con i pulsanti sotto il testo. In "Componi" vengono sostituiti con
+  data e ora attuali, aggiornate finché non modifichi il testo e ricalcolate al momento della copia.
 - **Esporta / Importa**: backup e condivisione dei template in un file JSON.
 
 Non mettere la cartella in `C:\Programmi`: lì l'app non ha i permessi per scrivere `template.json`.

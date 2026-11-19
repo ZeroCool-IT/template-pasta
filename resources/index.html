@@ -66,6 +66,8 @@
   button.danger { color: var(--danger); border-color: var(--danger); }
   .spacer { flex: 1; }
   .hint { color: var(--muted); font-size: 12px; }
+  .fields { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .fields button { padding: 3px 9px; font-size: 12px; font-family: Consolas, monospace; }
   .placeholder-msg { color: var(--muted); margin: auto; text-align: center; }
   #toast {
     position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(20px);
@@ -103,7 +105,9 @@
 
     <!-- COMPONI: messaggio pronto da copiare, modificabile senza toccare il template -->
     <section class="pane active" id="pane-compose">
-      <div class="hint">Puoi ritoccare il testo qui sotto prima di copiarlo: le modifiche non alterano il template salvato.</div>
+      <div class="hint">Puoi ritoccare il testo qui sotto prima di copiarlo: le modifiche non alterano il template salvato.
+        <span id="liveHint" hidden>· Data e ora si aggiornano automaticamente finché non modifichi il testo.</span>
+        <span id="frozenHint" hidden>· Testo modificato: data e ora non si aggiornano più (premi Ripristina per riattivarle).</span></div>
       <textarea id="composeText" spellcheck="true"></textarea>
       <div class="actions">
         <button class="primary big" id="btnCopy">Copia</button>
@@ -123,6 +127,12 @@
       <div style="display:flex;flex-direction:column;flex:1;min-height:0">
         <label for="editBody">Testo del template</label>
         <textarea id="editBody" spellcheck="true"></textarea>
+        <div class="fields" style="margin-top:6px">
+          <span class="hint">Inserisci campo automatico:</span>
+          <button type="button" data-insert="{{data}}" title="Data di oggi, es. 19/11/2026">{{data}}</button>
+          <button type="button" data-insert="{{ora}}" title="Ora attuale, es. 14:35">{{ora}}</button>
+          <button type="button" data-insert="{{dataora}}" title="Data e ora, es. 19/11/2026 14:35">{{dataora}}</button>
+        </div>
       </div>
       <div class="actions">
         <button class="primary" id="btnSave">Salva</button>
@@ -145,7 +155,7 @@
 
   const SAMPLE = [
     { title: 'Presa in carico', category: 'Assistenza',
-      body: 'Gentile Cliente,\n\nla ringraziamo per averci contattato. La sua richiesta è stata presa in carico e verrà gestita il prima possibile.\n\nCordiali saluti' },
+      body: 'Gentile Cliente,\n\nla ringraziamo per averci contattato. La sua richiesta è stata presa in carico in data {{data}} alle ore {{ora}} e verrà gestita il prima possibile.\n\nCordiali saluti' },
     { title: 'Richiesta informazioni aggiuntive', category: 'Assistenza',
       body: 'Gentile Cliente,\n\nper poter procedere con la sua richiesta avremmo bisogno di alcune informazioni aggiuntive:\n- \n- \n\nRestiamo in attesa di un suo riscontro.\n\nCordiali saluti' },
     { title: 'Chiusura ticket', category: 'Chiusura',
@@ -235,6 +245,40 @@
 
   const current = () => templates.find(t => t.id === currentId);
 
+  // ---------- Campi automatici ----------
+  // Segnaposto {{nome}} sostituiti nel messaggio composto. Per aggiungere un campo basta una voce qui.
+  const pad = n => String(n).padStart(2, '0');
+  const FIELDS = {
+    data:    d => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`,
+    ora:     d => `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+    dataora: d => `${FIELDS.data(d)} ${FIELDS.ora(d)}`,
+  };
+  const FIELD_RE = /\{\{\s*([a-zA-Z_]+)\s*\}\}/g;
+  const hasLiveFields = body => [...body.matchAll(FIELD_RE)].some(m => FIELDS[m[1].toLowerCase()]);
+  const renderBody = body => {
+    const now = new Date();
+    return body.replace(FIELD_RE, (all, name) => { const f = FIELDS[name.toLowerCase()]; return f ? f(now) : all; });
+  };
+
+  // Il messaggio composto resta "vivo" (si aggiorna da solo) finché l'utente non lo modifica.
+  let composeLive = true;
+  function refreshCompose(force = false) {
+    const t = current(); if (!t) return;
+    if (force) composeLive = true;
+    if (composeLive) {
+      const text = renderBody(t.body);
+      const ta = $('composeText');
+      if (ta.value !== text) {
+        const { selectionStart: a, selectionEnd: b } = ta;
+        ta.value = text;
+        if (document.activeElement === ta) ta.setSelectionRange(a, b);
+      }
+    }
+    const live = hasLiveFields(t.body);
+    $('liveHint').hidden = !(live && composeLive);
+    $('frozenHint').hidden = !(live && !composeLive);
+  }
+
   function select(id, tab = 'compose') {
     if (!confirmDiscard()) return;
     currentId = id;
@@ -243,7 +287,7 @@
     $('workArea').hidden = !t;
     $('workArea').style.display = t ? 'flex' : 'none';
     if (t) {
-      $('composeText').value = t.body;
+      refreshCompose(true);
       $('editTitle').value = t.title;
       $('editCat').value = t.category || '';
       $('editBody').value = t.body;
@@ -268,6 +312,7 @@
 
   // ---------- Azioni ----------
   async function copyText() {
+    refreshCompose();            // data e ora aggiornate al momento della copia
     const text = $('composeText').value;
     try {
       await navigator.clipboard.writeText(text);
@@ -288,7 +333,7 @@
     t.body = $('editBody').value;
     t.updatedAt = Date.now();
     persist();
-    $('composeText').value = t.body;
+    refreshCompose(true);
     renderList();
     toast('Template salvato');
   }
@@ -358,7 +403,14 @@
   $('btnSave').onclick = save;
   $('btnDelete').onclick = remove;
   $('btnCopy').onclick = copyText;
-  $('btnReset').onclick = () => { const t = current(); if (t) $('composeText').value = t.body; };
+  $('btnReset').onclick = () => refreshCompose(true);
+  $('composeText').addEventListener('input', () => { composeLive = false; refreshCompose(); });
+  setInterval(() => refreshCompose(), 15000);
+  document.querySelectorAll('[data-insert]').forEach(b => b.onclick = () => {
+    const ta = $('editBody'), ins = b.dataset.insert;
+    ta.focus();
+    ta.setRangeText(ins, ta.selectionStart, ta.selectionEnd, 'end');
+  });
   $('btnExport').onclick = exportJson;
   $('btnImport').onclick = () => $('fileImport').click();
   $('fileImport').onchange = e => { if (e.target.files[0]) importJson(e.target.files[0]); e.target.value = ''; };
