@@ -34,9 +34,7 @@ scripts/package.sh    # crea in dist/ lo zip completo e i file di aggiornamento
 ```
 
 ## Pubblicare una nuova versione
-```bash
-git tag v1.2.0 && git push origin v1.2.0
-```
+Alza `version` in `neutralino.config.json` (es. `1.2.0`) e fai push su `main`.
 Il workflow `.github/workflows/release.yml` costruisce l'app, crea la release con lo zip e pubblica
 `update.json` + `resources.neu` nel ramo `updates`, da cui le app installate scaricano l'aggiornamento
 (verificando dimensione e SHA-256).
