@@ -1,0 +1,11 @@
+Template Messaggi
+=================
+
+Avvia TemplateMessaggi.exe (resources.neu deve restare nella stessa cartella).
+I template vengono salvati in template.json in questa cartella
+(template.bak.json contiene la versione precedente).
+
+Gli aggiornamenti vengono proposti automaticamente all'avvio.
+
+Se Windows mostra "PC protetto da Windows": clic su "Ulteriori informazioni" e poi "Esegui comunque".
+Non mettere questa cartella in C:\Programmi (non avrebbe i permessi per salvare).

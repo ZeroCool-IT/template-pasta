@@ -22,7 +22,7 @@
   body {
     font: 14px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif;
     background: var(--bg); color: var(--text);
-    display: grid; grid-template-columns: 300px 1fr; grid-template-rows: auto 1fr;
+    display: grid; grid-template-columns: 300px 1fr; grid-template-rows: auto auto 1fr;
   }
   header {
     grid-column: 1 / -1; display: flex; align-items: center; gap: 8px;
@@ -69,6 +69,13 @@
   .fields { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
   .fields button { padding: 3px 9px; font-size: 12px; font-family: Consolas, monospace; }
   .placeholder-msg { color: var(--muted); margin: auto; text-align: center; }
+  .version { color: var(--muted); font-size: 12px; margin-right: 4px; }
+  #updateBar {
+    grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 8px 16px; background: var(--sel); border-bottom: 1px solid var(--border);
+  }
+  #updateBar[hidden] { display: none; }
+  #updateBar .msg { flex: 1; }
   #toast {
     position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(20px);
     background: var(--ok); color: #fff; padding: 9px 18px; border-radius: 6px;
@@ -81,10 +88,18 @@
 <body>
 <header>
   <h1>📋 Template Messaggi</h1>
+  <span class="version" id="appVersion"></span>
+  <button id="btnCheckUpd" hidden title="Controlla se è disponibile una nuova versione">Aggiornamenti</button>
   <button id="btnExport" title="Salva tutti i template in un file JSON">Esporta</button>
   <button id="btnImport" title="Carica template da un file JSON">Importa</button>
   <input type="file" id="fileImport" accept=".json,application/json" hidden>
 </header>
+<div id="updateBar" hidden>
+  <span class="msg" id="updMsg"></span>
+  <button class="primary" id="btnUpdNow" hidden>Aggiorna ora</button>
+  <button id="btnUpdPage" hidden>Scarica dalla pagina delle release</button>
+  <button id="btnUpdLater">Più tardi</button>
+</div>
 
 <aside>
   <div class="side-top">
@@ -423,6 +438,84 @@
   });
   window.addEventListener('beforeunload', e => { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
 
+  // ---------- Aggiornamenti automatici (solo eseguibile) ----------
+  // Ogni release pubblica update.json e resources.neu nel ramo "updates" del repository.
+  // Viene aggiornato solo resources.neu (interfaccia e config); se serve un nuovo eseguibile
+  // (binaryVersion diversa) si rimanda alla pagina delle release.
+  const REPO = 'ZeroCool-IT/template-pasta';
+  const UPDATE_URL = (typeof NL_UPDATEURL !== 'undefined' && NL_UPDATEURL) || `https://raw.githubusercontent.com/${REPO}/updates/`;
+  const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`;
+  const APP_VERSION = typeof NL_APPVERSION !== 'undefined' ? NL_APPVERSION : '';
+  let pendingUpdate = null;
+
+  const cmpVer = (a, b) => {
+    const pa = String(a).split('.').map(Number), pb = String(b).split('.').map(Number);
+    for (let i = 0; i < 3; i++) { const d = (pa[i] || 0) - (pb[i] || 0); if (d) return Math.sign(d); }
+    return 0;
+  };
+  const hex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+
+  function showUpdateBar(msg, { now = false, page = false } = {}) {
+    $('updMsg').textContent = msg;
+    $('btnUpdNow').hidden = !now;
+    $('btnUpdPage').hidden = !page;
+    $('updateBar').hidden = false;
+  }
+
+  async function checkForUpdates(manual = false) {
+    try {
+      const res = await fetch(UPDATE_URL + 'update.json?t=' + Date.now(), { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const info = await res.json();
+      if (cmpVer(info.version, APP_VERSION) <= 0) {
+        if (manual) toast(`Sei già alla versione più recente (${APP_VERSION})`);
+        return;
+      }
+      pendingUpdate = info;
+      if (info.binaryVersion && info.binaryVersion !== NL_VERSION) {
+        showUpdateBar(`È disponibile la versione ${info.version}, che richiede di scaricare di nuovo il programma completo.`, { page: true });
+      } else {
+        showUpdateBar(`È disponibile la versione ${info.version} (attuale ${APP_VERSION}).` + (info.notes ? ' ' + info.notes : ''), { now: true });
+      }
+    } catch (e) {
+      console.warn('Controllo aggiornamenti fallito', e);
+      if (manual) toast('Impossibile controllare gli aggiornamenti: ' + (e.message || e), true);
+    }
+  }
+
+  async function installUpdate() {
+    const info = pendingUpdate; if (!info) return;
+    if (isDirty() && !confirm('Ci sono modifiche al template non salvate che andranno perse. Aggiornare comunque?')) return;
+    const btn = $('btnUpdNow'); btn.disabled = true; btn.textContent = 'Download…';
+    const dir = NL_PATH.replace(/[\\/]+$/, '');
+    const target = dir + '/resources.neu', backup = dir + '/resources.bak.neu';
+    try {
+      const res = await fetch(UPDATE_URL + info.resources + '?t=' + Date.now(), { cache: 'no-store' });
+      if (!res.ok) throw new Error('download fallito (HTTP ' + res.status + ')');
+      const buf = await res.arrayBuffer();
+      if (info.size && buf.byteLength !== info.size) throw new Error('file scaricato incompleto');
+      if (info.sha256 && hex(await crypto.subtle.digest('SHA-256', buf)) !== info.sha256.toLowerCase())
+        throw new Error('verifica di integrità non superata');
+      await Neutralino.filesystem.copy(target, backup, { overwrite: true });
+      try {
+        await Neutralino.filesystem.writeBinaryFile(target, buf);
+      } catch (e) {
+        try { await Neutralino.filesystem.copy(backup, target, { overwrite: true }); } catch {}
+        throw e;
+      }
+      btn.textContent = 'Riavvio…';
+      await Neutralino.app.restartProcess();
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Aggiorna ora';
+      toast('Aggiornamento non riuscito: ' + (e.message || e.code || e), true);
+    }
+  }
+
+  $('btnUpdNow').onclick = installUpdate;
+  $('btnUpdLater').onclick = () => { $('updateBar').hidden = true; };
+  $('btnUpdPage').onclick = () => Neutralino.os.open(RELEASES_PAGE);
+  $('btnCheckUpd').onclick = () => checkForUpdates(true);
+
   async function start() {
     if (NATIVE) {
       Neutralino.init();
@@ -433,6 +526,11 @@
     await load();
     renderList();
     select(null);
+    if (NATIVE) {
+      $('appVersion').textContent = 'v' + APP_VERSION;
+      $('btnCheckUpd').hidden = false;
+      setTimeout(() => checkForUpdates(false), 2000);
+    }
   }
   start();
 })();

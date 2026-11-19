@@ -3,9 +3,14 @@
 Utility locale e stand-alone per gestire template di messaggi al cliente da copiare nel sistema di ticketing.
 
 ## Uso (eseguibile Windows)
-Estrai lo zip in una cartella a tua scelta (es. `Documenti\TemplateMessaggi`) e avvia `TemplateMessaggi.exe`.
+Scarica `TemplateMessaggi-win64.zip` dall'[ultima release](https://github.com/ZeroCool-IT/template-pasta/releases/latest),
+estrailo in una cartella a tua scelta (es. `Documenti\TemplateMessaggi`) e avvia `TemplateMessaggi.exe`
+(`resources.neu` deve restare nella stessa cartella).
 I template sono salvati in `template.json` nella stessa cartella dell'exe, con una copia della versione
 precedente in `template.bak.json`. Per spostare l'app su un altro PC basta copiare la cartella.
+
+All'avvio l'app controlla se c'è una versione nuova e propone di aggiornarsi con un clic
+(anche manualmente con il pulsante **Aggiornamenti**). I template non vengono toccati.
 
 - **Componi**: seleziona un template, ritocca il testo se serve, premi **Copia** (o Ctrl+Invio).
 - **Modifica template**: titolo, categoria e testo; **Salva** (o Ctrl+S), **Duplica**, **Elimina**.
@@ -23,7 +28,19 @@ Basato su [Neutralinojs](https://neutralino.js.org): l'interfaccia è in `resour
 
 ```bash
 npm install
-npx neu update                           # scarica i binari Neutralino e la libreria client
-npx neu run                              # avvia in sviluppo
-npx neu build --release --embed-resources   # crea dist/ con l'exe singolo
+npx neu update        # scarica i binari Neutralino e la libreria client
+npx neu run           # avvia in sviluppo
+scripts/package.sh    # crea in dist/ lo zip completo e i file di aggiornamento
 ```
+
+## Pubblicare una nuova versione
+```bash
+git tag v1.2.0 && git push origin v1.2.0
+```
+Il workflow `.github/workflows/release.yml` costruisce l'app, crea la release con lo zip e pubblica
+`update.json` + `resources.neu` nel ramo `updates`, da cui le app installate scaricano l'aggiornamento
+(verificando dimensione e SHA-256).
+
+L'aggiornamento automatico sostituisce solo `resources.neu` (interfaccia e configurazione). Se cambia
+`cli.binaryVersion` in `neutralino.config.json` serve un nuovo eseguibile: l'app lo segnala e rimanda
+alla pagina delle release.
