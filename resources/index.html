@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Template Messaggi</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --border: #d9dce1; --text: #1f2328;
+    --muted: #667080; --accent: #2563eb; --accent-text: #ffffff;
+    --danger: #c62828; --sel: #e8f0fe; --ok: #1b8a3a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181c; --panel: #1f2227; --border: #343841; --text: #e6e8eb;
+      --muted: #9aa2ae; --accent: #4f8cff; --accent-text: #ffffff;
+      --danger: #ef5350; --sel: #26324a; --ok: #4caf50;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font: 14px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--text);
+    display: grid; grid-template-columns: 300px 1fr; grid-template-rows: auto 1fr;
+  }
+  header {
+    grid-column: 1 / -1; display: flex; align-items: center; gap: 8px;
+    padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 16px; margin: 0; flex: 1; }
+  aside {
+    background: var(--panel); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .side-top { padding: 12px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--border); }
+  #list { overflow-y: auto; flex: 1; padding: 6px 0; }
+  .cat { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 10px 14px 4px; }
+  .item { padding: 7px 14px; cursor: pointer; border-left: 3px solid transparent; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item:hover { background: var(--bg); }
+  .item.active { background: var(--sel); border-left-color: var(--accent); font-weight: 600; }
+  .empty { color: var(--muted); padding: 14px; }
+  main { padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: auto; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
+  .tab { padding: 8px 14px; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; cursor: pointer; color: var(--muted); background: none; font: inherit; }
+  .tab.active { background: var(--panel); border-color: var(--border); color: var(--text); font-weight: 600; margin-bottom: -1px; }
+  .pane { display: none; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
+  .pane.active { display: flex; }
+  label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 3px; }
+  input, textarea, select {
+    font: inherit; color: var(--text); background: var(--panel);
+    border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; width: 100%;
+  }
+  input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  textarea { resize: vertical; min-height: 260px; flex: 1; font-family: inherit; }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  button {
+    font: inherit; padding: 7px 14px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--panel); color: var(--text);
+  }
+  button:hover { filter: brightness(.96); }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button.big { padding: 10px 26px; font-size: 15px; font-weight: 600; }
+  button.danger { color: var(--danger); border-color: var(--danger); }
+  .spacer { flex: 1; }
+  .hint { color: var(--muted); font-size: 12px; }
+  .fields { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .fields button { padding: 3px 9px; font-size: 12px; font-family: Consolas, monospace; }
+  .placeholder-msg { color: var(--muted); margin: auto; text-align: center; }
+  #toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--ok); color: #fff; padding: 9px 18px; border-radius: 6px;
+    opacity: 0; transition: .2s; pointer-events: none; font-weight: 600;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.err { background: var(--danger); }
+</style>
+</head>
+<body>
+<header>
+  <h1>📋 Template Messaggi</h1>
+  <button id="btnExport" title="Salva tutti i template in un file JSON">Esporta</button>
+  <button id="btnImport" title="Carica template da un file JSON">Importa</button>
+  <input type="file" id="fileImport" accept=".json,application/json" hidden>
+</header>
+
+<aside>
+  <div class="side-top">
+    <button class="primary" id="btnNew">+ Nuovo template</button>
+    <input type="search" id="search" placeholder="Cerca…">
+  </div>
+  <div id="list"></div>
+</aside>
+
+<main>
+  <div id="noSel" class="placeholder-msg">Seleziona un template dalla lista oppure creane uno nuovo.</div>
+
+  <div id="workArea" hidden style="display:flex;flex-direction:column;gap:12px;flex:1;min-height:0">
+    <div class="tabs">
+      <button class="tab active" data-tab="compose">Componi</button>
+      <button class="tab" data-tab="edit">Modifica template</button>
+    </div>
+
+    <!-- COMPONI: messaggio pronto da copiare, modificabile senza toccare il template -->
+    <section class="pane active" id="pane-compose">
+      <div class="hint">Puoi ritoccare il testo qui sotto prima di copiarlo: le modifiche non alterano il template salvato.
+        <span id="liveHint" hidden>· Data e ora si aggiornano automaticamente finché non modifichi il testo.</span>
+        <span id="frozenHint" hidden>· Testo modificato: data e ora non si aggiornano più (premi Ripristina per riattivarle).</span></div>
+      <textarea id="composeText" spellcheck="true"></textarea>
+      <div class="actions">
+        <button class="primary big" id="btnCopy">Copia</button>
+        <button id="btnReset" title="Ricarica il testo originale del template">Ripristina</button>
+        <span class="spacer"></span>
+        <span class="hint">Scorciatoia: Ctrl+Invio per copiare</span>
+      </div>
+    </section>
+
+    <!-- MODIFICA: gestione del template salvato -->
+    <section class="pane" id="pane-edit">
+      <div class="row">
+        <div><label for="editTitle">Titolo</label><input id="editTitle"></div>
+        <div><label for="editCat">Categoria</label><input id="editCat" list="catList" placeholder="es. Assistenza, Fatturazione…"></div>
+      </div>
+      <datalist id="catList"></datalist>
+      <div style="display:flex;flex-direction:column;flex:1;min-height:0">
+        <label for="editBody">Testo del template</label>
+        <textarea id="editBody" spellcheck="true"></textarea>
+        <div class="fields" style="margin-top:6px">
+          <span class="hint">Inserisci campo automatico:</span>
+          <button type="button" data-insert="{{data}}" title="Data di oggi, es. 19/11/2026">{{data}}</button>
+          <button type="button" data-insert="{{ora}}" title="Ora attuale, es. 14:35">{{ora}}</button>
+          <button type="button" data-insert="{{dataora}}" title="Data e ora, es. 19/11/2026 14:35">{{dataora}}</button>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="primary" id="btnSave">Salva</button>
+        <button id="btnDup">Duplica</button>
+        <span class="spacer"></span>
+        <button class="danger" id="btnDelete">Elimina</button>
+      </div>
+    </section>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<!-- Libreria Neutralino, usata solo nell'eseguibile: il server vi aggiunge le variabili NL_* (token incluso, consegnato una sola volta).
+     Non caricare anche /__neutralino_globals.js, altrimenti il token viene consumato due volte. -->
+<script src="js/neutralino.js"></script>
+<script>
+(() => {
+  const STORAGE_KEY = 'templateMessaggi.v1';
+
+  const SAMPLE = [
+    { title: 'Presa in carico', category: 'Assistenza',
+      body: 'Gentile Cliente,\n\nla ringraziamo per averci contattato. La sua richiesta è stata presa in carico in data {{data}} alle ore {{ora}} e verrà gestita il prima possibile.\n\nCordiali saluti' },
+    { title: 'Richiesta informazioni aggiuntive', category: 'Assistenza',
+      body: 'Gentile Cliente,\n\nper poter procedere con la sua richiesta avremmo bisogno di alcune informazioni aggiuntive:\n- \n- \n\nRestiamo in attesa di un suo riscontro.\n\nCordiali saluti' },
+    { title: 'Chiusura ticket', category: 'Chiusura',
+      body: 'Gentile Cliente,\n\nla informiamo che la sua richiesta è stata risolta e il ticket verrà chiuso. Qualora il problema dovesse ripresentarsi, non esiti a contattarci.\n\nCordiali saluti' },
+  ];
+
+  const $ = id => document.getElementById(id);
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+  let templates = [];
+  let currentId = null;
+
+  // ---------- Persistenza ----------
+  // Eseguibile: file template.json nella cartella dell'exe (backup in template.bak.json).
+  // Browser:    localStorage.
+  const NATIVE = typeof NL_PORT !== 'undefined' && typeof Neutralino !== 'undefined';
+  const DATA_FILE = NATIVE ? NL_PATH.replace(/[\\/]+$/, '') + '/template.json' : null;
+  const BAK_FILE = NATIVE ? DATA_FILE.replace(/\.json$/, '.bak.json') : null;
+  const serialize = () => JSON.stringify({ version: 1, templates }, null, 2);
+  const parseData = raw => { const d = JSON.parse(raw); return Array.isArray(d) ? d : d.templates; };
+
+  async function load() {
+    let raw = null;
+    try {
+      if (NATIVE) {
+        raw = await Neutralino.filesystem.readFile(DATA_FILE).catch(e => {
+          if (e && e.code === 'NE_FS_FILRDER') return null;   // file non ancora creato
+          throw e;
+        });
+      } else {
+        raw = localStorage.getItem(STORAGE_KEY);
+      }
+      if (raw) { templates = parseData(raw); return; }
+    } catch (e) {
+      alert('Impossibile leggere i template salvati:\n' + (e.message || e.code || e) +
+            (NATIVE ? '\n\nFile: ' + DATA_FILE + '\nControlla il file o ripristina template.bak.json.' : ''));
+      templates = [];
+      return; // non sovrascrivere un file illeggibile con i template di esempio
+    }
+    templates = SAMPLE.map(t => ({ id: uid(), ...t, updatedAt: Date.now() }));
+    await persist();
+  }
+
+  async function persist() {
+    try {
+      if (NATIVE) {
+        // copia di sicurezza della versione precedente, poi scrittura
+        try { await Neutralino.filesystem.copy(DATA_FILE, BAK_FILE, { overwrite: true }); } catch {}
+        await Neutralino.filesystem.writeFile(DATA_FILE, serialize());
+      } else {
+        localStorage.setItem(STORAGE_KEY, serialize());
+      }
+    } catch (e) { toast('Impossibile salvare: ' + (e.message || e.code || e), true); }
+  }
+
+  // ---------- UI ----------
+  function toast(msg, err = false) {
+    const t = $('toast');
+    t.textContent = msg; t.classList.toggle('err', err); t.classList.add('show');
+    clearTimeout(toast._h); toast._h = setTimeout(() => t.classList.remove('show'), 1600);
+  }
+
+  function renderList() {
+    const q = $('search').value.trim().toLowerCase();
+    const filtered = templates.filter(t =>
+      !q || t.title.toLowerCase().includes(q) || t.body.toLowerCase().includes(q) || (t.category || '').toLowerCase().includes(q));
+    const groups = {};
+    filtered.forEach(t => (groups[t.category || 'Senza categoria'] ||= []).push(t));
+    const list = $('list'); list.innerHTML = '';
+    const cats = Object.keys(groups).sort((a, b) => a.localeCompare(b, 'it'));
+    if (!cats.length) { list.innerHTML = '<div class="empty">Nessun template trovato.</div>'; }
+    cats.forEach(cat => {
+      const h = document.createElement('div'); h.className = 'cat'; h.textContent = cat; list.appendChild(h);
+      groups[cat].sort((a, b) => a.title.localeCompare(b.title, 'it')).forEach(t => {
+        const el = document.createElement('div');
+        el.className = 'item' + (t.id === currentId ? ' active' : '');
+        el.textContent = t.title || '(senza titolo)';
+        el.title = t.title;
+        el.onclick = () => select(t.id);
+        list.appendChild(el);
+      });
+    });
+    // categorie esistenti per l'autocompletamento
+    const allCats = [...new Set(templates.map(t => t.category).filter(Boolean))];
+    $('catList').innerHTML = allCats.map(c => `<option value="${c.replace(/"/g, '&quot;')}">`).join('');
+  }
+
+  const current = () => templates.find(t => t.id === currentId);
+
+  // ---------- Campi automatici ----------
+  // Segnaposto {{nome}} sostituiti nel messaggio composto. Per aggiungere un campo basta una voce qui.
+  const pad = n => String(n).padStart(2, '0');
+  const FIELDS = {
+    data:    d => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`,
+    ora:     d => `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+    dataora: d => `${FIELDS.data(d)} ${FIELDS.ora(d)}`,
+  };
+  const FIELD_RE = /\{\{\s*([a-zA-Z_]+)\s*\}\}/g;
+  const hasLiveFields = body => [...body.matchAll(FIELD_RE)].some(m => FIELDS[m[1].toLowerCase()]);
+  const renderBody = body => {
+    const now = new Date();
+    return body.replace(FIELD_RE, (all, name) => { const f = FIELDS[name.toLowerCase()]; return f ? f(now) : all; });
+  };
+
+  // Il messaggio composto resta "vivo" (si aggiorna da solo) finché l'utente non lo modifica.
+  let composeLive = true;
+  function refreshCompose(force = false) {
+    const t = current(); if (!t) return;
+    if (force) composeLive = true;
+    if (composeLive) {
+      const text = renderBody(t.body);
+      const ta = $('composeText');
+      if (ta.value !== text) {
+        const { selectionStart: a, selectionEnd: b } = ta;
+        ta.value = text;
+        if (document.activeElement === ta) ta.setSelectionRange(a, b);
+      }
+    }
+    const live = hasLiveFields(t.body);
+    $('liveHint').hidden = !(live && composeLive);
+    $('frozenHint').hidden = !(live && !composeLive);
+  }
+
+  function select(id, tab = 'compose') {
+    if (!confirmDiscard()) return;
+    currentId = id;
+    const t = current();
+    $('noSel').hidden = !!t;
+    $('workArea').hidden = !t;
+    $('workArea').style.display = t ? 'flex' : 'none';
+    if (t) {
+      refreshCompose(true);
+      $('editTitle').value = t.title;
+      $('editCat').value = t.category || '';
+      $('editBody').value = t.body;
+      showTab(tab);
+    }
+    renderList();
+  }
+
+  function showTab(name) {
+    document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    document.querySelectorAll('.pane').forEach(p => p.classList.toggle('active', p.id === 'pane-' + name));
+    if (name === 'compose') $('composeText').focus(); else $('editTitle').focus();
+  }
+
+  function isDirty() {
+    const t = current();
+    return t && ($('editTitle').value !== t.title || $('editCat').value !== (t.category || '') || $('editBody').value !== t.body);
+  }
+  function confirmDiscard() {
+    return !isDirty() || confirm('Ci sono modifiche al template non salvate. Vuoi scartarle?');
+  }
+
+  // ---------- Azioni ----------
+  async function copyText() {
+    refreshCompose();            // data e ora aggiornate al momento della copia
+    const text = $('composeText').value;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // fallback per browser che bloccano l'API clipboard su file://
+      const ta = $('composeText'); ta.select(); document.execCommand('copy');
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+    }
+    toast('Messaggio copiato ✓');
+  }
+
+  function save() {
+    const t = current(); if (!t) return;
+    const title = $('editTitle').value.trim();
+    if (!title) { toast('Il titolo è obbligatorio', true); $('editTitle').focus(); return; }
+    t.title = title;
+    t.category = $('editCat').value.trim();
+    t.body = $('editBody').value;
+    t.updatedAt = Date.now();
+    persist();
+    refreshCompose(true);
+    renderList();
+    toast('Template salvato');
+  }
+
+  function create(base) {
+    if (!confirmDiscard()) return;
+    const t = { id: uid(), title: base ? base.title + ' (copia)' : 'Nuovo template',
+                category: base ? base.category : '', body: base ? base.body : '', updatedAt: Date.now() };
+    templates.push(t); persist();
+    currentId = null; // evita il controllo "modifiche non salvate" sul vecchio
+    select(t.id, 'edit');
+    $('editTitle').select();
+  }
+
+  function remove() {
+    const t = current(); if (!t) return;
+    if (!confirm(`Eliminare definitivamente il template "${t.title}"?`)) return;
+    templates = templates.filter(x => x.id !== t.id); persist();
+    currentId = null; select(null);
+    toast('Template eliminato');
+  }
+
+  async function exportJson() {
+    const name = `template-messaggi-${new Date().toISOString().slice(0, 10)}.json`;
+    const content = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), templates }, null, 2);
+    if (NATIVE) {
+      try {
+        const path = await Neutralino.os.showSaveDialog('Esporta template', { defaultPath: name, filters: [{ name: 'JSON', extensions: ['json'] }] });
+        if (!path) return;
+        await Neutralino.filesystem.writeFile(path, content);
+        toast('Template esportati');
+      } catch (e) { toast('Esportazione fallita: ' + (e.message || e.code || e), true); }
+      return;
+    }
+    const blob = new Blob([content], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click(); URL.revokeObjectURL(a.href);
+  }
+
+  function importJson(file) {
+    const r = new FileReader();
+    r.onload = () => {
+      try {
+        const data = JSON.parse(r.result);
+        const arr = Array.isArray(data) ? data : data.templates;
+        if (!Array.isArray(arr)) throw new Error('formato non riconosciuto');
+        const clean = arr.filter(t => t && typeof t.body === 'string')
+          .map(t => ({ id: t.id || uid(), title: String(t.title || 'Senza titolo'), category: String(t.category || ''), body: t.body, updatedAt: t.updatedAt || Date.now() }));
+        const replace = confirm(`Trovati ${clean.length} template.\n\nOK = SOSTITUISCI tutti i template attuali\nAnnulla = AGGIUNGI a quelli esistenti`);
+        if (replace) templates = clean;
+        else {
+          const ids = new Set(templates.map(t => t.id));
+          clean.forEach(t => { if (ids.has(t.id)) t.id = uid(); templates.push(t); });
+        }
+        persist(); currentId = null; select(null);
+        toast(`Importati ${clean.length} template`);
+      } catch (e) { toast('Importazione fallita: ' + e.message, true); }
+    };
+    r.readAsText(file);
+  }
+
+  // ---------- Eventi ----------
+  $('btnNew').onclick = () => create();
+  $('btnDup').onclick = () => { const t = current(); if (t) create(t); };
+  $('btnSave').onclick = save;
+  $('btnDelete').onclick = remove;
+  $('btnCopy').onclick = copyText;
+  $('btnReset').onclick = () => refreshCompose(true);
+  $('composeText').addEventListener('input', () => { composeLive = false; refreshCompose(); });
+  setInterval(() => refreshCompose(), 15000);
+  document.querySelectorAll('[data-insert]').forEach(b => b.onclick = () => {
+    const ta = $('editBody'), ins = b.dataset.insert;
+    ta.focus();
+    ta.setRangeText(ins, ta.selectionStart, ta.selectionEnd, 'end');
+  });
+  $('btnExport').onclick = exportJson;
+  $('btnImport').onclick = () => $('fileImport').click();
+  $('fileImport').onchange = e => { if (e.target.files[0]) importJson(e.target.files[0]); e.target.value = ''; };
+  $('search').oninput = renderList;
+  document.querySelectorAll('.tab').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+
+  document.addEventListener('keydown', e => {
+    if (e.ctrlKey && e.key === 'Enter' && $('pane-compose').classList.contains('active') && current()) { e.preventDefault(); copyText(); }
+    if (e.ctrlKey && e.key.toLowerCase() === 's' && $('pane-edit').classList.contains('active')) { e.preventDefault(); save(); }
+  });
+  window.addEventListener('beforeunload', e => { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
+
+  async function start() {
+    if (NATIVE) {
+      Neutralino.init();
+      Neutralino.events.on('windowClose', () => {
+        if (!isDirty() || confirm('Ci sono modifiche al template non salvate. Chiudere comunque?')) Neutralino.app.exit();
+      });
+    }
+    await load();
+    renderList();
+    select(null);
+  }
+  start();
+})();
+</script>
+</body>
+</html>
