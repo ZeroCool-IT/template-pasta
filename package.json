@@ -1,0 +1,15 @@
+{
+  "name": "template-messaggi",
+  "version": "1.0.0",
+  "description": "Utility locale e stand-alone per gestire template di messaggi al cliente da copiare nel sistema di ticketing.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@neutralinojs/neu": "^11.8.0"
+  }
+}

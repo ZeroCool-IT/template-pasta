@@ -136,6 +136,9 @@
 
 <div id="toast"></div>
 
+<!-- Presenti solo quando gira come eseguibile (Neutralino); nel browser vengono ignorati -->
+<script src="/__neutralino_globals.js"></script>
+<script src="js/neutralino.js"></script>
 <script>
 (() => {
   const STORAGE_KEY = 'templateMessaggi.v1';
@@ -156,17 +159,46 @@
   let currentId = null;
 
   // ---------- Persistenza ----------
-  function load() {
+  // Eseguibile: file template.json nella cartella dell'exe (backup in template.bak.json).
+  // Browser:    localStorage.
+  const NATIVE = typeof NL_PORT !== 'undefined' && typeof Neutralino !== 'undefined';
+  const DATA_FILE = NATIVE ? NL_PATH.replace(/[\\/]+$/, '') + '/template.json' : null;
+  const BAK_FILE = NATIVE ? DATA_FILE.replace(/\.json$/, '.bak.json') : null;
+  const serialize = () => JSON.stringify({ version: 1, templates }, null, 2);
+  const parseData = raw => { const d = JSON.parse(raw); return Array.isArray(d) ? d : d.templates; };
+
+  async function load() {
+    let raw = null;
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) { templates = JSON.parse(raw); return; }
-    } catch (e) { console.warn('Lettura archivio fallita', e); }
+      if (NATIVE) {
+        raw = await Neutralino.filesystem.readFile(DATA_FILE).catch(e => {
+          if (e && e.code === 'NE_FS_FILRDER') return null;   // file non ancora creato
+          throw e;
+        });
+      } else {
+        raw = localStorage.getItem(STORAGE_KEY);
+      }
+      if (raw) { templates = parseData(raw); return; }
+    } catch (e) {
+      alert('Impossibile leggere i template salvati:\n' + (e.message || e.code || e) +
+            (NATIVE ? '\n\nFile: ' + DATA_FILE + '\nControlla il file o ripristina template.bak.json.' : ''));
+      templates = [];
+      return; // non sovrascrivere un file illeggibile con i template di esempio
+    }
     templates = SAMPLE.map(t => ({ id: uid(), ...t, updatedAt: Date.now() }));
-    persist();
+    await persist();
   }
-  function persist() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(templates)); }
-    catch (e) { toast('Impossibile salvare: ' + e.message, true); }
+
+  async function persist() {
+    try {
+      if (NATIVE) {
+        // copia di sicurezza della versione precedente, poi scrittura
+        try { await Neutralino.filesystem.copy(DATA_FILE, BAK_FILE, { overwrite: true }); } catch {}
+        await Neutralino.filesystem.writeFile(DATA_FILE, serialize());
+      } else {
+        localStorage.setItem(STORAGE_KEY, serialize());
+      }
+    } catch (e) { toast('Impossibile salvare: ' + (e.message || e.code || e), true); }
   }
 
   // ---------- UI ----------
@@ -279,11 +311,22 @@
     toast('Template eliminato');
   }
 
-  function exportJson() {
-    const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), templates }, null, 2)], { type: 'application/json' });
+  async function exportJson() {
+    const name = `template-messaggi-${new Date().toISOString().slice(0, 10)}.json`;
+    const content = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), templates }, null, 2);
+    if (NATIVE) {
+      try {
+        const path = await Neutralino.os.showSaveDialog('Esporta template', { defaultPath: name, filters: [{ name: 'JSON', extensions: ['json'] }] });
+        if (!path) return;
+        await Neutralino.filesystem.writeFile(path, content);
+        toast('Template esportati');
+      } catch (e) { toast('Esportazione fallita: ' + (e.message || e.code || e), true); }
+      return;
+    }
+    const blob = new Blob([content], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `template-messaggi-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = name;
     a.click(); URL.revokeObjectURL(a.href);
   }
 
@@ -328,9 +371,18 @@
   });
   window.addEventListener('beforeunload', e => { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
 
-  load();
-  renderList();
-  select(null);
+  async function start() {
+    if (NATIVE) {
+      Neutralino.init();
+      Neutralino.events.on('windowClose', () => {
+        if (!isDirty() || confirm('Ci sono modifiche al template non salvate. Chiudere comunque?')) Neutralino.app.exit();
+      });
+    }
+    await load();
+    renderList();
+    select(null);
+  }
+  start();
 })();
 </script>
 </body>
