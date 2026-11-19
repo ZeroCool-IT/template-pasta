@@ -136,8 +136,8 @@
 
 <div id="toast"></div>
 
-<!-- Presenti solo quando gira come eseguibile (Neutralino); nel browser vengono ignorati -->
-<script src="/__neutralino_globals.js"></script>
+<!-- Libreria Neutralino, usata solo nell'eseguibile: il server vi aggiunge le variabili NL_* (token incluso, consegnato una sola volta).
+     Non caricare anche /__neutralino_globals.js, altrimenti il token viene consumato due volte. -->
 <script src="js/neutralino.js"></script>
 <script>
 (() => {
